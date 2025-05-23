@@ -205,7 +205,7 @@ const PassengerDashboardPage = () => {
         onClose={() => setSnackbarOpen(false)}
         message={snackbarMessage}
       />
-    </Container>
+    </Box>
   );
 };
 
