@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build" # Se o projeto usar yarn, o usuário pode mudar para "yarn build" no Netlify
+  publish = "dist"
+  # A variável VITE_MAPBOX_TOKEN deve ser configurada na UI do Netlify.
+  # Esta linha abaixo apenas garante que o processo de build do Netlify saiba que essa variável é esperada.
+  # O Netlify tem sua própria maneira de injetar as variáveis de ambiente definidas na UI.
+  # No entanto, para builds locais via Netlify CLI, pode ser útil.
+  # Para o deploy via Git, o mais importante é configurar na UI do Netlify.
+  environment = { VITE_MAPBOX_TOKEN = "${VITE_MAPBOX_TOKEN}" }
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -1,291 +1,234 @@
 import React, { useEffect, useContext, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import { Box, Paper, Typography, Button, Grid, Card, CardContent, Avatar, CircularProgress, Container } from '@mui/material';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import { RideContext } from '../../contexts/RideContext';
-import { AuthContext } from '../../contexts/AuthContext'; // Para informações do usuário/passageiro
+import { RideContext } from '../../contexts/RideContext'; // Removido useRide, não estava sendo usado
+import { AuthContext } from '../../contexts/AuthContext';
 
-// Ícones personalizados
-const driverIcon = new L.Icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/3448/3448609.png', // Exemplo de ícone de carro
-  iconSize: [40, 40],
-  iconAnchor: [20, 40],
-  popupAnchor: [0, -40],
-});
+// Mapbox Imports
+import MapboxMap from '../../components/common/MapboxMap';
+import { Marker as MapboxMarker, Source, Layer, Popup as MapboxPopup } from 'react-map-gl';
+import mapboxgl from 'mapbox-gl'; // Import mapboxgl para LngLatBounds
 
-const passengerIcon = new L.Icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/1946/1946777.png', // Exemplo de ícone de pessoa
-  iconSize: [35, 35],
-  iconAnchor: [17, 35],
-  popupAnchor: [0, -35],
-});
-
-// Correção para o ícone padrão do marcador do Leaflet não aparecer (caso não use ícones personalizados)
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-});
+// Material-UI Icons for Markers
+import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
+import PersonPinIcon from '@mui/icons-material/PersonPin';
+import FmdGoodIcon from '@mui/icons-material/FmdGood';
 
 const TrackRidePage = () => {
-  const { rideId } = useParams(); // Embora não usado diretamente para buscar, é bom ter
+  const { rideId } = useParams();
   const navigate = useNavigate();
   const {
     activeRide,
     driverLocation,
-    simulate_updateDriverLocation,
+    // simulate_updateDriverLocation, // Não é mais usado diretamente aqui, motorista atualiza
     simulate_cancelRide,
     simulate_startTripToDestination,
-    simulate_completeRide, // Importar simulate_completeRide
+    simulate_completeRide,
     locationUpdateInterval,
-    setLocationUpdateInterval
+    setLocationUpdateInterval,
+    rideToRateDetails,
   } = useContext(RideContext);
   const { user } = useContext(AuthContext);
 
   const mapRef = useRef(null);
 
-  // Efeito para simular o movimento do motorista
+  const [viewState, setViewState] = useState({
+    longitude: -46.6333, 
+    latitude: -23.5505,
+    zoom: 12
+  });
+  
+  const [showDriverPopup, setShowDriverPopup] = useState(false);
+  const [showPickupPopup, setShowPickupPopup] = useState(false);
+  const [showDestPopup, setShowDestPopup] = useState(false);
+
+  // Efeito para limpar o intervalo se a corrida terminar ou o componente desmontar
   useEffect(() => {
-    if (activeRide && activeRide.status === 'PICKING_UP' && !locationUpdateInterval) {
-      const intervalId = setInterval(() => {
-        // Simulação simples de movimento em direção ao passageiro
-        // Em uma aplicação real, o backend enviaria essas atualizações via WebSocket
-        setDriverLocation(prevLocation => {
-          if (!prevLocation || !activeRide.pickupLocation) return prevLocation;
-
-          const targetLat = activeRide.pickupLocation.lat;
-          const targetLng = activeRide.pickupLocation.lng;
-          const step = 0.0001; // Ajuste o tamanho do passo conforme necessário
-
-          let newLat = prevLocation.lat;
-          let newLng = prevLocation.lng;
-
-          if (Math.abs(targetLat - prevLocation.lat) < step && Math.abs(targetLng - prevLocation.lng) < step) {
-            // Chegou ao local de partida
-            clearInterval(intervalId);
-            setLocationUpdateInterval(null);
-            simulate_startTripToDestination(); // Muda o status para 'IN_PROGRESS'
-            console.log("Motorista chegou ao local de partida.");
-            // Poderia iniciar uma nova simulação para o destino aqui
-            return prevLocation; // Retorna a localização final (local de partida)
-          }
-
-          if (prevLocation.lat < targetLat) newLat += step;
-          else if (prevLocation.lat > targetLat) newLat -= step;
-
-          if (prevLocation.lng < targetLng) newLng += step;
-          else if (prevLocation.lng > targetLng) newLng -= step;
-
-          simulate_updateDriverLocation({ lat: newLat, lng: newLng });
-          return { lat: newLat, lng: newLng };
-        });
-      }, 2000); // Atualiza a cada 2 segundos
-      setLocationUpdateInterval(intervalId);
-    } else if (activeRide && activeRide.status === 'IN_PROGRESS' && !locationUpdateInterval) {
-      // Simulação de movimento para o destino
-       const intervalId = setInterval(() => {
-        setDriverLocation(prevLocation => {
-          if (!prevLocation || !activeRide.destinationLocation) return prevLocation;
-
-          const targetLat = activeRide.destinationLocation.lat;
-          const targetLng = activeRide.destinationLocation.lng;
-          const step = 0.0002; // Movimento um pouco mais rápido para o destino
-
-          let newLat = prevLocation.lat;
-          let newLng = prevLocation.lng;
-
-           if (Math.abs(targetLat - prevLocation.lat) < step && Math.abs(targetLng - prevLocation.lng) < step) {
-            clearInterval(intervalId);
-            setLocationUpdateInterval(null);
-            console.log("Chegou ao destino!");
-            // Adiciona a corrida ao histórico com o preço estimado
-            if (activeRide && typeof activeRide.estimatedPrice === 'number') {
-              simulate_completeRide(activeRide.estimatedPrice);
-            } else if (activeRide) {
-              simulate_completeRide(0); // Fallback se o preço não estiver disponível
-            }
-            // Poderia mostrar um Snackbar/Alerta de "Corrida Concluída" antes de navegar
-            // ou mudar o estado da UI para mostrar opções de avaliação, etc.
-            // Por simplicidade, vamos apenas logar e o RideContext já trata de limpar activeRide.
-            // A navegação pode ser feita no effect que observa activeRide se tornando null.
-            return prevLocation;
-          }
-
-          if (prevLocation.lat < targetLat) newLat += step;
-          else if (prevLocation.lat > targetLat) newLat -= step;
-
-          if (prevLocation.lng < targetLng) newLng += step;
-          else if (prevLocation.lng > targetLng) newLng -= step;
-
-          simulate_updateDriverLocation({ lat: newLat, lng: newLng });
-          return { lat: newLat, lng: newLng };
-        });
-      }, 2000);
-      setLocationUpdateInterval(intervalId);
-    }
-
-    // Limpa o intervalo quando o componente é desmontado ou a corrida termina
+    // A simulação de movimento do motorista agora é feita em DriverRideNavigationPage.
+    // Este useEffect apenas garante que, se houver algum intervalo antigo (improvável), ele seja limpo.
     return () => {
       if (locationUpdateInterval) {
         clearInterval(locationUpdateInterval);
         setLocationUpdateInterval(null);
       }
     };
-  }, [activeRide, simulate_updateDriverLocation, locationUpdateInterval, setLocationUpdateInterval, simulate_startTripToDestination]);
+  }, [locationUpdateInterval, setLocationUpdateInterval]);
 
-
+  // Ajustar o viewport do mapa
   useEffect(() => {
-    // Centralizar o mapa entre o motorista e o passageiro/destino
-    if (mapRef.current && driverLocation && activeRide) {
-      const passengerLoc = activeRide.status === 'PICKING_UP' ? activeRide.pickupLocation : activeRide.destinationLocation;
-      if(passengerLoc) {
-        const bounds = L.latLngBounds([
-          [driverLocation.lat, driverLocation.lng],
-          [passengerLoc.lat, passengerLoc.lng]
-        ]);
-        mapRef.current.fitBounds(bounds, { padding: [50, 50] });
+    if (driverLocation && activeRide && activeRide.pickupLocation && mapRef.current?.getMap) {
+      const mapboxMap = mapRef.current.getMap();
+      let points = [[driverLocation.longitude, driverLocation.latitude]];
+
+      if (activeRide.status === 'PICKING_UP' && activeRide.pickupLocation) {
+        points.push([activeRide.pickupLocation.longitude, activeRide.pickupLocation.latitude]);
+      } else if (activeRide.status === 'IN_PROGRESS' && activeRide.destinationLocation) {
+        points.push([activeRide.destinationLocation.longitude, activeRide.destinationLocation.latitude]);
+      } else if (activeRide.pickupLocation) {
+         points.push([activeRide.pickupLocation.longitude, activeRide.pickupLocation.latitude]);
+      }
+      
+      if (points.length > 1) {
+        const bounds = new mapboxgl.LngLatBounds(points[0], points[0]);
+        points.forEach(point => bounds.extend(point));
+        try {
+          mapboxMap.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 1000 });
+        } catch (e) { console.error("Mapbox fitBounds error:", e); }
+      } else {
+         try {
+            mapboxMap.flyTo({ center: points[0], zoom: 15, duration: 1000 });
+          } catch (e) { console.error("Mapbox flyTo error:", e); }
       }
     }
-  }, [driverLocation, activeRide, mapRef]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driverLocation, activeRide?.status, mapRef.current]);
 
 
-  // Efeito para navegar para a avaliação ou histórico quando a corrida ativa é limpa
+  // Navegação para avaliação ou histórico
   useEffect(() => {
     if (!activeRide && rideId) {
-      // Verifica se há uma corrida para avaliar no contexto E se o ID corresponde
-      // Isso é importante para não redirecionar para avaliação de uma corrida antiga se o contexto não foi limpo por algum motivo
-      if (activeRide === null && rideToRateDetails && rideToRateDetails.id === rideId) {
+      if (rideToRateDetails && rideToRateDetails.id === rideId) {
         navigate(`/passageiro/avaliar-corrida/${rideId}`);
       } else {
-        // Se não há corrida específica para avaliar ou os IDs não batem, vai para o histórico
         navigate('/passageiro/historico-corridas');
       }
     }
   }, [activeRide, rideToRateDetails, navigate, rideId]);
 
-
-  if (!activeRide) {
-    // Se não há corrida ativa, mas ainda estamos nesta página (antes do redirect do useEffect acima)
-    // ou se o usuário navegou para cá sem uma corrida ativa.
+  if (!activeRide || !activeRide.pickupLocation) {
     return (
-      <Container sx={{ textAlign: 'center', mt: 5 }}>
-        <Typography variant="h5">Nenhuma corrida ativa no momento.</Typography>
-        <Button variant="contained" sx={{ mt: 2 }} onClick={() => navigate('/passageiro/dashboard')}>
-          Solicitar Nova Corrida
-        </Button>
+      <Container sx={{ textAlign: 'center', mt: {xs:2, sm:5}, p:2 }}>
+        <Paper elevation={3} sx={{p:3, borderRadius:'12px'}}>
+            <Typography variant="h5">Carregando detalhes da corrida...</Typography>
+            <Typography variant="body1" sx={{my:2}}>Se a corrida não carregar, ela pode não estar mais ativa.</Typography>
+            <Button variant="contained" color="primary" onClick={() => navigate('/passageiro/dashboard')}>
+            Painel Principal
+            </Button>
+        </Paper>
       </Container>
     );
   }
 
-  // Se activeRide não for null, prossegue com a renderização normal
-  const { driverInfo, carInfo, status, pickupLocation, destinationLocation, routePolyline } = activeRide;
+  const { driverInfo, carInfo, status, pickupLocation, destinationLocation } = activeRide;
 
   let statusMessage = "Carregando...";
   if (status === 'PICKING_UP') statusMessage = "Motorista a caminho do local de partida.";
+  else if (status === 'ARRIVED_AT_PICKUP') statusMessage = "Motorista chegou ao local de embarque.";
   else if (status === 'IN_PROGRESS') statusMessage = "Em viagem para o destino.";
-  else if (status === 'ACCEPTED') statusMessage = "Motorista aceitou sua corrida. Aguardando confirmação..."; // Status inicial
   else if (status === 'COMPLETED') statusMessage = "Corrida finalizada.";
   else if (status === 'CANCELLED') statusMessage = "Corrida cancelada.";
-
+  else if (status === 'ACCEPTED_BY_DRIVER') statusMessage = "Motorista aceitou. A caminho!";
 
   const handleCancelRide = () => {
-    if (locationUpdateInterval) {
-      clearInterval(locationUpdateInterval);
-      setLocationUpdateInterval(null);
-    }
+    if (locationUpdateInterval) clearInterval(locationUpdateInterval);
+    setLocationUpdateInterval(null);
     simulate_cancelRide();
-    navigate('/passageiro/dashboard');
   };
 
+  const routeToPickupGeoJson = driverLocation && pickupLocation ? {
+    type: 'Feature', geometry: { type: 'LineString', coordinates: [[driverLocation.longitude, driverLocation.latitude], [pickupLocation.longitude, pickupLocation.latitude]] }
+  } : null;
+  
+  const driverToDestGeoJson = driverLocation && destinationLocation && status === 'IN_PROGRESS' ? {
+      type: 'Feature', geometry: { type: 'LineString', coordinates: [[driverLocation.longitude, driverLocation.latitude], [destinationLocation.longitude, destinationLocation.latitude]]}
+  } : null;
+
+
   return (
-    <Container sx={{ py: 2, height: 'calc(100vh - 64px - 32px)', display: 'flex', flexDirection: 'column' }}> {/* Subtrai altura da navbar e padding */}
-      <Typography variant="h4" gutterBottom>
+    <Container sx={{ py: {xs:1, sm:2}, height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}> {/* 64px é a altura da AppBar */}
+      <Typography variant="h4" gutterBottom sx={{ textAlign: { xs: 'center', sm: 'left' }, mb:2 }}>
         Acompanhamento da Corrida
       </Typography>
       <Grid container spacing={2} sx={{ flexGrow: 1 }}>
-        <Grid item xs={12} md={8} sx={{ height: '100%'}}>
-          <Paper elevation={3} sx={{ height: '100%', width: '100%' }}>
-            {driverLocation ? (
-              <MapContainer
+        <Grid item xs={12} md={7} lg={8} sx={{ height: {xs: '350px', md:'auto'} }}> {/* Altura do mapa responsiva */}
+          <Paper elevation={3} sx={{ height: '100%', width: '100%', borderRadius: '12px', overflow: 'hidden' }}>
+            {activeRide.pickupLocation ? (
+              <MapboxMap
                 ref={mapRef}
-                center={driverLocation || pickupLocation || [0,0]} // Fallback se driverLocation for null inicialmente
-                zoom={15}
-                style={{ height: '100%', width: '100%' }}
+                initialViewState={viewState}
+                onMove={evt => setViewState(evt.viewState)}
+                style={{ width: '100%', height: '100%' }}
+                mapStyle="mapbox://styles/mapbox/streets-v12"
               >
-                <TileLayer
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                />
-                {/* Marcador do Motorista */}
                 {driverLocation && (
-                  <Marker position={[driverLocation.lat, driverLocation.lng]} icon={driverIcon}>
-                    <Popup>Motorista: {driverInfo.name}</Popup>
-                  </Marker>
+                  <MapboxMarker longitude={driverLocation.longitude} latitude={driverLocation.latitude} anchor="center" onClick={() => setShowDriverPopup(true)}>
+                    <DirectionsCarIcon sx={{ fontSize: 40, color: (theme) => theme.palette.primary.main }} /> {/* Cor do tema */}
+                  </MapboxMarker>
                 )}
-                {/* Marcador do Ponto de Partida */}
+                 {showDriverPopup && driverLocation && (
+                    <MapboxPopup longitude={driverLocation.longitude} latitude={driverLocation.latitude} anchor="bottom" onClose={() => setShowDriverPopup(false)} closeOnClick={false} offset={30}>
+                        <Typography variant="subtitle2">Motorista:</Typography>
+                        <Typography variant="body2">{driverInfo?.name || 'Aguardando'}</Typography>
+                    </MapboxPopup>
+                )}
                 {pickupLocation && (
-                  <Marker position={[pickupLocation.lat, pickupLocation.lng]} icon={passengerIcon}>
-                    <Popup>Seu local de partida</Popup>
-                  </Marker>
+                  <MapboxMarker longitude={pickupLocation.longitude} latitude={pickupLocation.latitude} anchor="bottom" onClick={() => setShowPickupPopup(true)}>
+                    <PersonPinIcon sx={{ fontSize: 35, color: (theme) => theme.palette.secondary.main }} /> {/* Cor do tema */}
+                  </MapboxMarker>
                 )}
-                {/* Marcador do Ponto de Destino */}
+                {showPickupPopup && pickupLocation && (
+                    <MapboxPopup longitude={pickupLocation.longitude} latitude={pickupLocation.latitude} anchor="top" onClose={() => setShowPickupPopup(false)} closeOnClick={false} >
+                        <Typography variant="body2">Seu local de partida</Typography>
+                    </MapboxPopup>
+                )}
                 {destinationLocation && (
-                  <Marker position={[destinationLocation.lat, destinationLocation.lng]}>
-                    <Popup>Seu destino</Popup>
-                  </Marker>
+                  <MapboxMarker longitude={destinationLocation.longitude} latitude={destinationLocation.latitude} anchor="bottom" onClick={() => setShowDestPopup(true)}>
+                    <FmdGoodIcon sx={{ fontSize: 35, color: "red" }} /> {/* Mantido vermelho para destino */}
+                  </MapboxMarker>
                 )}
-                {/* Rota (ex: do motorista ao passageiro, ou passageiro ao destino) */}
-                {routePolyline && routePolyline.length > 0 && (
-                  <Polyline positions={routePolyline} color="blue" />
+                {showDestPopup && destinationLocation && (
+                    <MapboxPopup longitude={destinationLocation.longitude} latitude={destinationLocation.latitude} anchor="top" onClose={() => setShowDestPopup(false)} closeOnClick={false}>
+                        <Typography variant="body2">Seu destino</Typography>
+                    </MapboxPopup>
                 )}
-                {/* Rota simulada do motorista para o passageiro (se status for PICKING_UP) */}
-                {status === 'PICKING_UP' && driverLocation && pickupLocation && (
-                    <Polyline positions={[[driverLocation.lat, driverLocation.lng], [pickupLocation.lat, pickupLocation.lng]]} color="green" dashArray="5, 5" />
+                {(status === 'PICKING_UP' || status === 'ACCEPTED_BY_DRIVER') && routeToPickupGeoJson && (
+                  <Source id="routeToPickup" type="geojson" data={routeToPickupGeoJson}>
+                    <Layer id="routeToPickupLayer" type="line" paint={{ 'line-color': (theme) => theme.palette.secondary.main, 'line-width': 4, 'line-dasharray': [2, 2] }} />
+                  </Source>
                 )}
-                {/* Rota simulada do ponto de partida ao destino (se status for IN_PROGRESS) */}
-                 {status === 'IN_PROGRESS' && driverLocation && destinationLocation && (
-                    <Polyline positions={[[driverLocation.lat, driverLocation.lng], [destinationLocation.lat, destinationLocation.lng]]} color="purple" />
+                {status === 'IN_PROGRESS' && driverToDestGeoJson && (
+                  <Source id="routeToDestination" type="geojson" data={driverToDestGeoJson}>
+                    <Layer id="routeToDestinationLayer" type="line" paint={{ 'line-color': (theme) => theme.palette.primary.main, 'line-width': 5 }} />
+                  </Source>
                 )}
-
-              </MapContainer>
+              </MapboxMap>
             ) : (
               <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                <CircularProgress />
-                <Typography sx={{ ml: 2 }}>Carregando mapa e localização do motorista...</Typography>
+                <CircularProgress /> <Typography sx={{ ml: 2 }}>Carregando mapa...</Typography>
               </Box>
             )}
           </Paper>
         </Grid>
-        <Grid item xs={12} md={4}>
-          <Paper elevation={3} sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>Detalhes da Corrida</Typography>
-            <Card sx={{ mb: 2 }}>
-              <CardContent>
-                <Grid container spacing={2} alignItems="center">
-                  <Grid item>
-                    <Avatar src={driverInfo.photoUrl || 'https://via.placeholder.com/150'} sx={{ width: 60, height: 60 }} />
-                  </Grid>
-                  <Grid item xs>
-                    <Typography variant="h6">{driverInfo.name}</Typography>
-                    <Typography variant="body1">Veículo: {carInfo.model}</Typography>
-                    <Typography variant="body2">Placa: {carInfo.plate}</Typography>
-                  </Grid>
-                </Grid>
-              </CardContent>
-            </Card>
-            <Typography variant="subtitle1" gutterBottom>Status: <strong>{statusMessage}</strong></Typography>
-            <Typography variant="body2">Partida: {pickupLocation.lat.toFixed(4)}, {pickupLocation.lng.toFixed(4)}</Typography>
-            <Typography variant="body2">Destino: {destinationLocation.lat.toFixed(4)}, {destinationLocation.lng.toFixed(4)}</Typography>
-
+        <Grid item xs={12} md={5} lg={4}>
+          <Paper elevation={3} sx={{ p: {xs:2, sm:3}, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', borderRadius: '12px' }}>
+            <Box>
+              <Typography variant="h6" gutterBottom>Detalhes da Corrida</Typography>
+              {driverInfo && carInfo && (
+                <Card sx={{ mb: 2, borderRadius: '10px' /* Já herda do tema, mas pode ser específico */ }}>
+                  <CardContent>
+                    <Grid container spacing={2} alignItems="center">
+                      <Grid item>
+                        <Avatar src={driverInfo.photoUrl || 'https://via.placeholder.com/80'} sx={{ width: 60, height: 60 }} />
+                      </Grid>
+                      <Grid item xs>
+                        <Typography variant="h6">{driverInfo.name}</Typography>
+                        <Typography variant="body1" color="text.secondary">{carInfo.model}</Typography>
+                        <Typography variant="body2" color="text.secondary">Placa: {carInfo.plate}</Typography>
+                      </Grid>
+                    </Grid>
+                  </CardContent>
+                </Card>
+              )}
+              <Typography variant="subtitle1" gutterBottom>Status: <strong style={{color: activeRide.status === 'COMPLETED' ? 'green' : 'inherit'}}>{statusMessage}</strong></Typography>
+              {pickupLocation && <Typography variant="body2" color="text.secondary">Partida: {pickupLocation.latitude.toFixed(4)}, {pickupLocation.longitude.toFixed(4)}</Typography>}
+              {destinationLocation && <Typography variant="body2" color="text.secondary">Destino: {destinationLocation.latitude.toFixed(4)}, {destinationLocation.longitude.toFixed(4)}</Typography>}
+            </Box>
             <Button
               variant="contained"
-              color="error"
+              color="error" // Mantido error para cancelamento
               fullWidth
               onClick={handleCancelRide}
-              sx={{ mt: 2 }}
+              sx={{ mt: 2, py: 1.2, fontSize: '0.9rem' }} // Estilo de botão consistente
               disabled={status === 'COMPLETED' || status === 'CANCELLED'}
             >
               Cancelar Corrida

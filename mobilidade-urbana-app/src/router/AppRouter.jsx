@@ -11,9 +11,10 @@ import RideHistoryPage from '../pages/passenger/RideHistoryPage';
 import RateRidePage from '../pages/passenger/RateRidePage';
 import ProfilePage from '../pages/passenger/ProfilePage';
 import DriverDashboardPage from '../pages/driver/DriverDashboardPage';
-import DriverRideNavigationPage from '../pages/driver/DriverRideNavigationPage'; // Importar DriverRideNavigationPage
-import { Button, AppBar, Toolbar, Typography, Box, Menu, MenuItem, IconButton } from '@mui/material';
+import DriverRideNavigationPage from '../pages/driver/DriverRideNavigationPage';
+import { Button, AppBar, Toolbar, Typography, Box, Menu, MenuItem, IconButton, SvgIcon } from '@mui/material';
 import AccountCircle from '@mui/icons-material/AccountCircle';
+import DirectionsCarFilledIcon from '@mui/icons-material/DirectionsCarFilled'; // Exemplo de ícone para logo
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { isAuthenticated, user } = useContext(AuthContext);
@@ -30,11 +31,10 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   return children;
 };
 
-// Renomeado para AppNavbar para clareza
 const AppNavbar = () => {
   const { isAuthenticated, logout, user } = useContext(AuthContext);
   const [anchorEl, setAnchorEl] = useState(null);
-  const navigate = useNavigate(); // Hook useNavigate para redirecionamento
+  const navigate = useNavigate();
 
   const handleProfileMenuOpen = (event) => {
     setAnchorEl(event.currentTarget);
@@ -45,31 +45,51 @@ const AppNavbar = () => {
   };
   
   const handleLogout = () => {
-    logout(); // Limpa o estado de autenticação
-    handleProfileMenuClose(); // Fecha o menu
-    navigate('/login'); // Redireciona para a página de login
+    logout();
+    handleProfileMenuClose();
+    navigate('/login');
+  };
+
+  // Estilo para os botões da Navbar para garantir contraste
+  const navbarButtonStyle = {
+    color: 'inherit', // Herda a cor do texto definida na AppBar (contrastText)
+    '&:hover': {
+      backgroundColor: 'rgba(255, 255, 255, 0.08)', // Leve destaque no hover
+    },
   };
 
   return (
-    <AppBar position="static">
+    // AppBar já pega primary.main do tema para background e contrastText para cor do texto
+    <AppBar position="static" elevation={1}> 
       <Toolbar>
-        <Typography variant="h6" component={RouterLink} to="/" sx={{ flexGrow: 1, color: 'inherit', textDecoration: 'none' }}>
+        <DirectionsCarFilledIcon sx={{ mr: 1.5, fontSize: '2rem' }} /> 
+        <Typography 
+          variant="h5" 
+          component={RouterLink} 
+          to="/" 
+          sx={{ 
+            flexGrow: 1, 
+            color: 'inherit', // Herda contrastText
+            textDecoration: 'none',
+            fontWeight: 'bold',
+          }}
+        >
           Mobilidade App
         </Typography>
         {isAuthenticated && user ? (
           <>
             <Typography sx={{ mr: 2, display: { xs: 'none', sm: 'block'} } }>
-              Bem-vindo, {user.name || 'Usuário'}
+              Olá, {user.name || 'Usuário'}
             </Typography>
             {user.role === 'passenger' && (
               <>
-                <Button color="inherit" component={RouterLink} to="/passageiro/dashboard">Painel</Button>
-                <Button color="inherit" component={RouterLink} to="/passageiro/historico-corridas">Histórico</Button>
+                <Button sx={navbarButtonStyle} component={RouterLink} to="/passageiro/dashboard">Painel</Button>
+                <Button sx={navbarButtonStyle} component={RouterLink} to="/passageiro/historico-corridas">Histórico</Button>
               </>
             )}
             {user.role === 'driver' && (
               <>
-                <Button color="inherit" component={RouterLink} to="/motorista/dashboard">Painel Motorista</Button>
+                <Button sx={navbarButtonStyle} component={RouterLink} to="/motorista/dashboard">Painel Motorista</Button>
               </>
             )}
             <IconButton
@@ -79,30 +99,56 @@ const AppNavbar = () => {
               aria-controls="menu-appbar"
               aria-haspopup="true"
               onClick={handleProfileMenuOpen}
-              color="inherit"
+              color="inherit" // Herda contrastText
             >
-              <AccountCircle />
+              <AccountCircle sx={{ fontSize: '1.8rem' }}/>
             </IconButton>
             <Menu
               id="menu-appbar"
               anchorEl={anchorEl}
-              anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
               keepMounted
               transformOrigin={{ vertical: 'top', horizontal: 'right' }}
               open={Boolean(anchorEl)}
               onClose={handleProfileMenuClose}
+              PaperProps={{
+                elevation: 2, // Sombra sutil para o menu
+                sx: {
+                  overflow: 'visible',
+                  filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.12))', // Sombra mais customizada se necessário
+                  mt: 1,
+                  '& .MuiAvatar-root': {
+                    width: 32,
+                    height: 32,
+                    ml: -0.5,
+                    mr: 1,
+                  },
+                  '&:before': { // Seta para o menu, opcional
+                    content: '""',
+                    display: 'block',
+                    position: 'absolute',
+                    top: 0,
+                    right: 14,
+                    width: 10,
+                    height: 10,
+                    bgcolor: 'background.paper',
+                    transform: 'translateY(-50%) rotate(45deg)',
+                    zIndex: 0,
+                  },
+                },
+              }}
             >
-              {/* Link para Perfil (genérico ou específico por role) */}
-              <MenuItem component={RouterLink} to={user.role === 'driver' ? "/passageiro/perfil" : "/passageiro/perfil"} onClick={handleProfileMenuClose}>Meu Perfil</MenuItem>
-              {/* <MenuItem component={RouterLink} to={user.role === 'driver' ? "/motorista/perfil" : "/passageiro/perfil"} onClick={handleProfileMenuClose}>Meu Perfil</MenuItem> */}
+              <MenuItem component={RouterLink} to={user.role === 'driver' ? "/passageiro/perfil" : "/passageiro/perfil"} onClick={handleProfileMenuClose}>
+                Meu Perfil
+              </MenuItem>
               <MenuItem onClick={handleLogout}>Sair</MenuItem>
             </Menu>
           </>
         ) : (
           <>
-            <Button color="inherit" component={RouterLink} to="/login">Entrar</Button>
-            <Button color="inherit" component={RouterLink} to="/cadastro-passageiro">Cadastrar Passageiro</Button>
-            <Button color="inherit" component={RouterLink} to="/cadastro-motorista">Cadastrar Motorista</Button>
+            <Button sx={navbarButtonStyle} component={RouterLink} to="/login">Entrar</Button>
+            <Button sx={navbarButtonStyle} component={RouterLink} to="/cadastro-passageiro">Cadastrar Passageiro</Button>
+            <Button sx={navbarButtonStyle} component={RouterLink} to="/cadastro-motorista">Cadastrar Motorista</Button>
           </>
         )}
       </Toolbar>
@@ -114,12 +160,9 @@ const AppRouter = () => {
   const { user } = useContext(AuthContext);
 
   return (
-    // BrowserRouter é idealmente colocado em App.jsx ou main.jsx envolvendo <App />
-    // Se já estiver lá, não é necessário aqui. Se não, este é o local correto.
-    // Para este exemplo, assumimos que está em um nível superior.
     <>
       <AppNavbar />
-      <Box sx={{ mt: 0, p: 0, height: 'calc(100vh - 64px)', overflowY: 'auto' }}>
+      <Box sx={{ mt: 0, p: 0, height: 'calc(100vh - 64px)', overflowY: 'auto', backgroundColor: (theme) => theme.palette.background.default }}>
         <Routes>
           {/* Rotas Públicas */}
           <Route path="/login" element={<LoginPage />} />
@@ -132,8 +175,6 @@ const AppRouter = () => {
           <Route path="/passageiro/historico-corridas" element={<ProtectedRoute allowedRoles={['passenger']}><RideHistoryPage /></ProtectedRoute>} />
           <Route path="/passageiro/avaliar-corrida/:rideId" element={<ProtectedRoute allowedRoles={['passenger']}><RateRidePage /></ProtectedRoute>} />
           
-          {/* Rota de Perfil (Compartilhada ou pode ser dividida) */}
-          {/* Usando /passageiro/perfil para ambos por enquanto, mas pode ser /perfil ou /motorista/perfil */}
           <Route path="/passageiro/perfil" element={<ProtectedRoute allowedRoles={['passenger', 'driver']}><ProfilePage /></ProtectedRoute>} />
 
           {/* Rotas de Motorista */}
@@ -147,7 +188,7 @@ const AppRouter = () => {
               <ProtectedRoute>
                 {user && user.role === 'passenger' ? <Navigate to="/passageiro/dashboard" replace /> :
                  user && user.role === 'driver' ? <Navigate to="/motorista/dashboard" replace /> :
-                 <Home /> /* Fallback */}
+                 <Home /> }
               </ProtectedRoute>
             }
           />

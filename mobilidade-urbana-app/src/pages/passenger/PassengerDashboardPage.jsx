@@ -1,76 +1,57 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { useNavigate } from 'react-router-dom'; // Importar useNavigate
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from 'react-leaflet';
-import { Box, Paper, Typography, TextField, Button, Grid, Snackbar, Container } from '@mui/material'; // Importar Container
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import { RideContext } from '../../contexts/RideContext'; // Importar RideContext
+import { useNavigate } from 'react-router-dom';
+import { Box, Paper, Typography, TextField, Button, Grid, Snackbar } from '@mui/material'; // Removido Container, não usado diretamente aqui
+import { RideContext } from '../../contexts/RideContext';
 
-// Correção para o ícone padrão do marcador do Leaflet não aparecer
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-});
+// Mapbox Imports
+import MapboxMap from '../../components/common/MapboxMap';
+import { Marker as MapboxMarker, Source, Layer } from 'react-map-gl';
+
+// Material-UI Icons for Markers
+import FmdGoodIcon from '@mui/icons-material/FmdGood'; // Para pontos de partida/destino
+import MyLocationIcon from '@mui/icons-material/MyLocation'; // Alternativa para ponto de partida
 
 // Posição inicial (São Paulo)
-const initialPosition = [-23.55052, -46.633308];
+const initialPosition = { longitude: -46.633308, latitude: -23.55052 };
 const TARIFA_BASE = 5.00;
 const TARIFA_KM = 2.50;
 
-function LocationMarker({ position, onPositionChange, label }) {
-  const map = useMapEvents({
-    click(e) {
-      if (onPositionChange) {
-        onPositionChange(e.latlng);
-        map.flyTo(e.latlng, map.getZoom());
-      }
-    },
-  });
-
-  return position === null ? null : (
-    <Marker position={position}>
-      <Popup>{label}</Popup>
-    </Marker>
-  );
-}
-
 const PassengerDashboardPage = () => {
-  const [startPoint, setStartPoint] = useState(null); // { lat, lng } ou null
-  const [endPoint, setEndPoint] = useState(null); // { lat, lng } ou null
+  const [startPoint, setStartPoint] = useState(null);
+  const [endPoint, setEndPoint] = useState(null);
   const [startAddress, setStartAddress] = useState('');
   const [endAddress, setEndAddress] = useState('');
-  const [route, setRoute] = useState([]);
   const [estimatedPrice, setEstimatedPrice] = useState(null);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
-  const { simulate_acceptRide } = useContext(RideContext); // Usar o contexto da corrida
-  const navigate = useNavigate(); // Hook para navegação
+  const { simulate_acceptRide } = useContext(RideContext);
+  const navigate = useNavigate();
+
+  const [viewState, setViewState] = useState({
+    ...initialPosition,
+    zoom: 11
+  });
 
   const handleMapClick = (event) => {
+    const { lngLat } = event;
+    const point = { longitude: lngLat.lng, latitude: lngLat.lat };
+
     if (!startPoint) {
-      setStartPoint(event.latlng);
-      setStartAddress(`Lat: ${event.latlng.lat.toFixed(4)}, Lng: ${event.latlng.lng.toFixed(4)}`);
+      setStartPoint(point);
+      setStartAddress(`Lat: ${point.latitude.toFixed(4)}, Lng: ${point.longitude.toFixed(4)}`);
+      setEndPoint(null);
+      setEstimatedPrice(null);
     } else if (!endPoint) {
-      setEndPoint(event.latlng);
-      setEndAddress(`Lat: ${event.latlng.lat.toFixed(4)}, Lng: ${event.latlng.lng.toFixed(4)}`);
+      setEndPoint(point);
+      setEndAddress(`Lat: ${point.latitude.toFixed(4)}, Lng: ${point.longitude.toFixed(4)}`);
     }
   };
 
   const handleShowRouteAndPrice = () => {
     if (startPoint && endPoint) {
-      // Simula cálculo de rota (linha reta)
-      setRoute([startPoint, endPoint]);
-
-      // Simula cálculo de distância (distância euclidiana simples para demonstração)
-      // Em uma aplicação real, usaria um serviço de roteamento para obter a distância real da rota.
-      const latDiff = endPoint.lat - startPoint.lat;
-      const lngDiff = endPoint.lng - startPoint.lng;
-      // Convertendo para uma "distância" aproximada em km (muito simplificado)
-      // Este fator de conversão é apenas ilustrativo e não geograficamente preciso.
-      const distanceKm = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111; // Aproximação grosseira
-
+      const latDiff = endPoint.latitude - startPoint.latitude;
+      const lngDiff = endPoint.longitude - startPoint.longitude;
+      const distanceKm = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111;
       const price = TARIFA_BASE + distanceKm * TARIFA_KM;
       setEstimatedPrice(price.toFixed(2));
       setSnackbarMessage(`Rota simulada. Preço estimado: R$ ${price.toFixed(2)}`);
@@ -82,28 +63,21 @@ const PassengerDashboardPage = () => {
   };
 
   const handleRequestRide = () => {
-    if (route.length > 0 && estimatedPrice && startPoint && endPoint) {
+    if (startPoint && endPoint && estimatedPrice) {
       const rideDetails = {
-        id: `ride_${Date.now()}`, // ID Simples
-        pickupLocation: startPoint, // { lat, lng }
-        destinationLocation: endPoint, // { lat, lng }
+        id: `ride_${Date.now()}`,
+        pickupLocation: { lat: startPoint.latitude, lng: startPoint.longitude },
+        destinationLocation: { lat: endPoint.latitude, lng: endPoint.longitude },
         startAddress,
         endAddress,
-        estimatedPrice,
-        routePolyline: route, // Passa a rota desenhada
-        // Informações do motorista e carro seriam adicionadas pelo backend/contexto
+        estimatedPrice: parseFloat(estimatedPrice),
       };
-
-      const acceptedRide = simulate_acceptRide(rideDetails); // Chama a simulação do contexto
-
+      const acceptedRide = simulate_acceptRide(rideDetails);
       if (acceptedRide) {
-        console.log('Solicitação de corrida aceita (simulada):', acceptedRide);
         setSnackbarMessage(`Sua corrida foi aceita! Motorista a caminho.`);
         setSnackbarOpen(true);
-        // Navega para a tela de acompanhamento da corrida
         navigate(`/passageiro/corrida/acompanhar/${acceptedRide.id}`);
       } else {
-        // Isso não deveria acontecer com a simulação atual, mas é um bom fallback
         setSnackbarMessage('Não foi possível solicitar a corrida no momento.');
         setSnackbarOpen(true);
       }
@@ -112,87 +86,105 @@ const PassengerDashboardPage = () => {
       setSnackbarOpen(true);
     }
   };
+  
+  const routeGeoJson = (start, end) => {
+    if (!start || !end) return null;
+    return {
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [start.longitude, start.latitude],
+          [end.longitude, end.latitude]
+        ]
+      }
+    };
+  };
 
-  // Componente interno para interagir com o mapa e definir pontos
-  function ClickHandler() {
-    useMapEvents({
-      click: handleMapClick,
-    });
-    return null; // Não renderiza nada visualmente
-  }
-
+  const buttonSx = { py: 1.2, fontSize: '0.9rem', mt: 2 }; // Consistente com o tema, mas um pouco menor que auth
 
   return (
-    <Box sx={{ py: 2 }}> {/* Alterado para Box para consistência, Container já está no PassengerDashboardContainer */}
-      <Typography variant="h4" gutterBottom>
-        Painel do Passageiro
+    <Box sx={{ py: { xs: 1, sm: 2 }, px: { xs: 1, sm: 0 } }}> {/* Ajustado padding para telas menores */}
+      <Typography variant="h4" gutterBottom sx={{ textAlign: { xs: 'center', sm: 'left' } }}>
+        Para Onde Vamos?
       </Typography>
       <Grid container spacing={2}>
-        <Grid item xs={12} md={8}>
-          <Paper elevation={3} sx={{ height: '500px', width: '100%' }}>
-            <MapContainer center={initialPosition} zoom={13} style={{ height: '100%', width: '100%' }} whenCreated={ mapInstance => { /* mapRef.current = mapInstance; */ } }>
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              />
-              <ClickHandler /> {/* Adiciona o manipulador de cliques */}
-              {startPoint && <Marker position={startPoint}><Popup>Ponto de Partida</Popup></Marker>}
-              {endPoint && <Marker position={endPoint}><Popup>Ponto de Destino</Popup></Marker>}
-              {route.length > 0 && <Polyline positions={route} color="blue" />}
-            </MapContainer>
+        <Grid item xs={12} md={7} lg={8}> {/* Ajustado para dar mais espaço ao mapa em telas grandes */}
+          <Paper elevation={3} sx={{ height: '500px', width: '100%', borderRadius: '12px', overflow: 'hidden' }}> {/* Adicionado borderRadius e overflow */}
+            <MapboxMap
+              initialViewState={viewState}
+              onMove={evt => setViewState(evt.viewState)}
+              onClick={handleMapClick}
+              style={{ width: '100%', height: '100%' }}
+              mapStyle="mapbox://styles/mapbox/streets-v12" // Estilo de mapa mais recente
+            >
+              {startPoint && (
+                <MapboxMarker longitude={startPoint.longitude} latitude={startPoint.latitude} anchor="bottom">
+                  <MyLocationIcon color="primary" sx={{ fontSize: 30 }} />
+                </MapboxMarker>
+              )}
+              {endPoint && (
+                <MapboxMarker longitude={endPoint.longitude} latitude={endPoint.latitude} anchor="bottom">
+                  <FmdGoodIcon color="secondary" sx={{ fontSize: 30 }} />
+                </MapboxMarker>
+              )}
+              {startPoint && endPoint && (
+                <Source id="route" type="geojson" data={routeGeoJson(startPoint, endPoint)}>
+                  <Layer
+                    id="route-layer"
+                    type="line"
+                    paint={{
+                      'line-color': (theme) => theme.palette.secondary.main, // Usando a cor secundária do tema
+                      'line-width': 4, // Linha um pouco mais fina
+                      'line-opacity': 0.85
+                    }}
+                  />
+                </Source>
+              )}
+            </MapboxMap>
           </Paper>
         </Grid>
-        <Grid item xs={12} md={4}>
-          <Paper elevation={3} sx={{ p: 2 }}>
+        <Grid item xs={12} md={5} lg={4}> {/* Ajustado para complementar o mapa */}
+          <Paper elevation={3} sx={{ p: {xs: 2, sm: 3}, borderRadius: '12px' }}> {/* Adicionado borderRadius e padding responsivo */}
             <Typography variant="h6" gutterBottom>Controle de Viagem</Typography>
             <TextField
-              label="Local de Partida"
+              label="Local de Partida (Clique no mapa)"
               value={startAddress}
-              onChange={(e) => setStartAddress(e.target.value)}
+              InputProps={{ readOnly: true }}
               fullWidth
               margin="normal"
-              // Aqui poderia adicionar lógica para converter endereço em coordenadas ou vice-versa
-              // Por enquanto, é preenchido pelo clique no mapa ou manualmente
+              variant="outlined" // Alterado para outlined
             />
-            <Typography variant="caption" display="block" gutterBottom>
-              {startPoint ? `Lat: ${startPoint.lat.toFixed(4)}, Lng: ${startPoint.lng.toFixed(4)}` : "Clique no mapa para definir a partida"}
-            </Typography>
-
             <TextField
-              label="Local de Destino"
+              label="Local de Destino (Clique no mapa)"
               value={endAddress}
-              onChange={(e) => setEndAddress(e.target.value)}
+              InputProps={{ readOnly: true }}
               fullWidth
               margin="normal"
+              variant="outlined" // Alterado para outlined
             />
-            <Typography variant="caption" display="block" gutterBottom>
-              {endPoint ? `Lat: ${endPoint.lat.toFixed(4)}, Lng: ${endPoint.lng.toFixed(4)}` : "Clique no mapa para definir o destino"}
-            </Typography>
-
             <Button
               variant="contained"
               color="primary"
               fullWidth
               onClick={handleShowRouteAndPrice}
-              sx={{ mt: 2 }}
-              disabled={!startPoint && !endPoint && (!startAddress || !endAddress)} // Habilitar se houver pontos ou endereços
+              sx={buttonSx}
+              disabled={!startPoint || !endPoint}
             >
               Ver Rota e Preço
             </Button>
-
             {estimatedPrice && (
-              <Typography variant="h6" sx={{ mt: 2 }}>
-                Preço Estimado: R$ {estimatedPrice}
+              <Typography variant="h5" sx={{ mt: 2, mb: 1, textAlign: 'center', fontWeight: 'bold' }}>
+                R$ {estimatedPrice}
               </Typography>
             )}
-
             <Button
               variant="contained"
-              color="secondary"
+              color="secondary" // Cor secundária para ação principal aqui
               fullWidth
               onClick={handleRequestRide}
-              sx={{ mt: 2 }}
-              disabled={!route.length || !estimatedPrice}
+              sx={buttonSx}
+              disabled={!startPoint || !endPoint || !estimatedPrice}
             >
               Solicitar Corrida
             </Button>
@@ -201,18 +193,19 @@ const PassengerDashboardPage = () => {
       </Grid>
       <Snackbar
         open={snackbarOpen}
-        autoHideDuration={6000}
+        autoHideDuration={4000}
         onClose={() => setSnackbarOpen(false)}
         message={snackbarMessage}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }} // Melhor posicionamento
       />
     </Box>
   );
 };
 
-// Adicionando Container para melhor layout geral da página, similar ao LoginPage
+// Container que envolve a página, aplicando fundo e padding geral
 const PassengerDashboardContainer = () => {
   return (
-    <Box sx={{ flexGrow: 1, p: 3, backgroundColor: (theme) => theme.palette.background.default, minHeight: 'calc(100vh - 64px)' }}> {/* Container já está aqui */}
+    <Box sx={{ flexGrow: 1, p: {xs: 1, sm: 2, md:3}, backgroundColor: (theme) => theme.palette.background.default, minHeight: 'calc(100vh - 64px)' }}>
       <PassengerDashboardPage />
     </Box>
   );
